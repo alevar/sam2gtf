@@ -1,0 +1,45 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'sam2gtf'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sam2gtf",
+                    "--package=sam2gtf"
+                ],
+                "filter": {
+                    "name": "sam2gtf",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--input", "test_data/reads.bam", "--output", "test_data/reads.gtf"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'sam2gtf'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=sam2gtf",
+                    "--package=sam2gtf"
+                ],
+                "filter": {
+                    "name": "sam2gtf",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
