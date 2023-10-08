@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["--input", "test_data/reads.bam", "--output", "test_data/reads.gtf"],
+            "args": ["--input", "test_data/reads.siv239.sub.sam", "--output", "test_data/reads.siv239.sub.gtf"],
             "cwd": "${workspaceFolder}"
         },
         {

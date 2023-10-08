@@ -1,6 +1,9 @@
 extern crate clap;
 extern crate rust_htslib;
 
+use std::fs;
+use std::io::Write;
+
 use clap::{Command,Arg};
 use rust_htslib::bam;
 use rust_htslib::bam::Read;
@@ -8,6 +11,10 @@ use rust_htslib::bam::Read;
 // the main logic of the app. perform conversion from SAM/BAM to GTF
 fn convert(input_fname: String, output_fname: String) {
     let mut reader = bam::Reader::from_path(input_fname).unwrap();
+    let header =  reader.header().to_owned();
+
+    // prepare the output file
+    let mut gtf_writer = fs::File::create(output_fname).expect("Could not create output file");
     
     for r in reader.records() {
         let record = r.unwrap();
@@ -50,16 +57,15 @@ fn convert(input_fname: String, output_fname: String) {
                     exon_end += len;
                 },
                 bam::record::Cigar::RefSkip(len) => {
-                    exons.push((exon_start, exon_end));
+                    exons.push((exon_start+1, exon_end));
                     exon_start = exon_end + len;
                     exon_end = exon_start;
                 },
                 bam::record::Cigar::SoftClip(len) => {
                     // if started = true, then this is the end of the read
                     if started {
-                        exons.push((exon_start, exon_end));
+                        exons.push((exon_start+1, exon_end));
                     }
-                    exon_start += len;
                     started = true;
                 },
                 bam::record::Cigar::HardClip(len) => {
@@ -70,9 +76,22 @@ fn convert(input_fname: String, output_fname: String) {
                 }
             }
         }
-        for exon in &exons {
-            println!("{}-{}", exon.0, exon.1);
+        // push the last exon
+        exons.push((exon_start+1, exon_end));
+        
+        // write transcript line. qname as transcript_id
+        let sequence_id = record.tid();
+        let seq_name_bytes = header.tid2name(sequence_id as u32);
+        let seq_name = std::str::from_utf8(seq_name_bytes).unwrap();
+        let tx_line = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\ttranscript_id \"{}\";\n", seq_name, "SAM2GTF", "transcript", exon_start, exon_end, ".", strand, ".", qname);
+        gtf_writer.write_all(tx_line.as_bytes()).expect("Could not write to output file");
+
+        // write exon lines. qname as transcript_id
+        for exon in exons {
+            let exon_line = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\ttranscript_id \"{}\";\n", seq_name, "SAM2GTF", "exon", exon.0, exon.1, ".", strand, ".", qname);
+            gtf_writer.write_all(exon_line.as_bytes()).expect("Could not write to output file");
         }
+
     }
 }
 
