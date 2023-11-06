@@ -46,7 +46,6 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool) {
         let mut exons: Vec<(u32, u32)> = Vec::new();
         let mut exon_start: u32 = pos as u32;
         let mut exon_end: u32 = pos as u32;
-        let mut started = false; // set to false until the first modifier operation is found (M)
         for c in &cigar {
             match c {
                 bam::record::Cigar::Match(len) => {
@@ -70,11 +69,7 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool) {
                     exon_end = exon_start;
                 },
                 bam::record::Cigar::SoftClip(len) => {
-                    // if started = true, then this is the end of the read
-                    if started {
-                        exons.push((exon_start+1, exon_end));
-                    }
-                    started = true;
+                    // do nothing
                 },
                 bam::record::Cigar::HardClip(len) => {
                     // do nothing
