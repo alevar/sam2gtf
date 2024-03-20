@@ -64,7 +64,9 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool) {
                     exon_end += len;
                 },
                 bam::record::Cigar::RefSkip(len) => {
-                    exons.push((exon_start+1, exon_end));
+                    if (exon_end - exon_start) > 0 {
+                        exons.push((exon_start+1, exon_end));
+                    }
                     exon_start = exon_end + len;
                     exon_end = exon_start;
                 },
