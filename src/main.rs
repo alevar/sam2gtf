@@ -9,7 +9,7 @@ use rust_htslib::bam;
 use rust_htslib::bam::Read;
 
 // the main logic of the app. perform conversion from SAM/BAM to GTF
-fn convert(input_fname: String, output_fname: String, keep_multi: bool) {
+fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_alignment: u8) {
     let mut reader = bam::Reader::from_path(input_fname).unwrap();
     let header =  reader.header().to_owned();
 
@@ -46,12 +46,15 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool) {
         let mut exons: Vec<(u32, u32)> = Vec::new();
         let mut exon_start: u32 = pos as u32;
         let mut exon_end: u32 = pos as u32;
+        let mut aligned_bases = 0;
         for c in &cigar {
             match c {
                 bam::record::Cigar::Match(len) => {
+                    aligned_bases += len;
                     exon_end += len;
                 },
                 bam::record::Cigar::Equal(len) => {
+                    aligned_bases += len;
                     exon_end += len;
                 },
                 bam::record::Cigar::Diff(len) => {
@@ -80,6 +83,10 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool) {
                     println!("Unknown CIGAR operation {}", qname);
                 }
             }
+        }
+        let aligned_fraction = aligned_bases as f64 / record.seq_len() as f64;
+        if aligned_fraction < percent_alignment as f64 / 100.0 {
+            continue;
         }
         // push the last exon
         exons.push((exon_start+1, exon_end));
@@ -125,6 +132,16 @@ fn main() {
             .help("If enable, will convert all multimappers. By default this is disabled and only primary alignments are converted."),
 
         )
+        .arg(
+            Arg::new("percent_alignment")
+            .short('p')
+            .long("percent_alignment")
+            .required(false)
+            .default_value("80")
+            .help("Minimum percentage alignment required to keep the read (default: 80)")
+            .value_parser(clap::value_parser!(u8).range(0..100))
+            .action(ArgAction::Set)
+        )
         .after_help("--help or -h")
         .get_matches();
 
@@ -132,6 +149,7 @@ fn main() {
     let input_fname: &String = matches.get_one("input").unwrap();
     let output_fname: &String = matches.get_one("output").unwrap();
     let keep_multi: bool = matches.get_flag("keep_multi");
+    let percent_alignment: u8 = *matches.get_one("percent_alignment").expect("required");
 
-    convert(input_fname.to_string(), output_fname.to_string(), keep_multi);
+    convert(input_fname.to_string(), output_fname.to_string(), keep_multi, percent_alignment);
 }
