@@ -47,21 +47,26 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
         let mut exon_start: u32 = pos as u32;
         let mut exon_end: u32 = pos as u32;
         let mut aligned_bases = 0;
+        let mut read_length = 0;
+        let mut query_alignment_start = 0;
+        let mut query_alignment_end = 0;
+        let mut in_alignment = false;
+
         for c in &cigar {
             match c {
-                bam::record::Cigar::Match(len) => {
-                    aligned_bases += len;
-                    exon_end += len;
-                },
-                bam::record::Cigar::Equal(len) => {
-                    aligned_bases += len;
-                    exon_end += len;
-                },
+                bam::record::Cigar::Match(len) |
+                bam::record::Cigar::Equal(len) |
                 bam::record::Cigar::Diff(len) => {
+                    aligned_bases += len;
+                    read_length += len;
                     exon_end += len;
+                    if !in_alignment {
+                        query_alignment_start = read_length - len; // set start when entering alignment
+                        in_alignment = true;
+                    }
                 },
                 bam::record::Cigar::Ins(len) => {
-                    // do nothing
+                    read_length += len;
                 },
                 bam::record::Cigar::Del(len) => {
                     exon_end += len;
@@ -73,18 +78,28 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
                     exon_start = exon_end + len;
                     exon_end = exon_start;
                 },
-                bam::record::Cigar::SoftClip(len) => {
-                    // do nothing
-                },
+                bam::record::Cigar::SoftClip(len) |
                 bam::record::Cigar::HardClip(len) => {
-                    // do nothing
+                    if in_alignment { // mark end if exiting alignment with softclip
+                        query_alignment_end = read_length;
+                        in_alignment = false;
+                    }
+                    read_length += len;
                 },
                 _ => {
                     println!("Unknown CIGAR operation {}", qname);
                 }
             }
         }
-        let aligned_fraction = aligned_bases as f64 / record.seq_len() as f64;
+
+        if in_alignment {
+            query_alignment_end = read_length;
+        }
+
+        // if(qname=="TALONT000234197"){
+        //     println!("{}:{} {}", query_alignment_start, query_alignment_end, aligned_bases);
+        // }
+        let aligned_fraction = aligned_bases as f64 / read_length as f64;
         if aligned_fraction < percent_alignment as f64 / 100.0 {
             continue;
         }
@@ -95,7 +110,7 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
         let sequence_id = record.tid();
         let seq_name_bytes = header.tid2name(sequence_id as u32);
         let seq_name = std::str::from_utf8(seq_name_bytes).unwrap();
-        let tx_line = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\ttranscript_id \"{}\"; read_name \"{}\";\n", seq_name, "SAM2GTF", "transcript", exons.first().unwrap().0, exons.last().unwrap().1, ".", strand, ".", read_count, qname);
+        let tx_line = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\ttranscript_id \"{}\"; read_name \"{}\"; query_alignment_start \"{}\"; query_alignment_end \"{}\"; cigar \"{}\"\n", seq_name, "SAM2GTF", "transcript", exons.first().unwrap().0, exons.last().unwrap().1, ".", strand, ".", read_count, qname, query_alignment_start, query_alignment_end, cigar.to_string());
         gtf_writer.write_all(tx_line.as_bytes()).expect("Could not write to output file");
 
         // write exon lines. qname as transcript_id
