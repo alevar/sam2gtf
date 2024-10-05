@@ -9,7 +9,7 @@ use rust_htslib::bam;
 use rust_htslib::bam::Read;
 
 // the main logic of the app. perform conversion from SAM/BAM to GTF
-fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_alignment: u8) {
+fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_alignment: u8, simplify_cigar: bool) {
     let mut reader = bam::Reader::from_path(input_fname).unwrap();
     let header =  reader.header().to_owned();
 
@@ -52,6 +52,8 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
         let mut query_alignment_end = 0;
         let mut in_alignment = false;
 
+        let mut cigar_string = String::new();
+
         for c in &cigar {
             match c {
                 bam::record::Cigar::Match(len) |
@@ -64,12 +66,15 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
                         query_alignment_start = read_length - len; // set start when entering alignment
                         in_alignment = true;
                     }
+                    cigar_string.push_str(&format!("{}M", len));
                 },
                 bam::record::Cigar::Ins(len) => {
                     read_length += len;
+                    cigar_string.push_str(&format!("{}I", len));
                 },
                 bam::record::Cigar::Del(len) => {
                     exon_end += len;
+                    cigar_string.push_str(&format!("{}D", len));
                 },
                 bam::record::Cigar::RefSkip(len) => {
                     if (exon_end - exon_start) > 0 {
@@ -77,6 +82,7 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
                     }
                     exon_start = exon_end + len;
                     exon_end = exon_start;
+                    cigar_string.push_str(&format!("{}N", len));
                 },
                 bam::record::Cigar::SoftClip(len) |
                 bam::record::Cigar::HardClip(len) => {
@@ -85,6 +91,7 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
                         in_alignment = false;
                     }
                     read_length += len;
+                    cigar_string.push_str(&format!("{}S", len));
                 },
                 _ => {
                     println!("Unknown CIGAR operation {}", qname);
@@ -105,12 +112,16 @@ fn convert(input_fname: String, output_fname: String, keep_multi: bool, percent_
         }
         // push the last exon
         exons.push((exon_start+1, exon_end));
+
+        if !simplify_cigar {
+            cigar_string = cigar.to_string();
+        }
         
         // write transcript line. qname as transcript_id
         let sequence_id = record.tid();
         let seq_name_bytes = header.tid2name(sequence_id as u32);
         let seq_name = std::str::from_utf8(seq_name_bytes).unwrap();
-        let tx_line = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\ttranscript_id \"{}\"; read_name \"{}\"; query_alignment_start \"{}\"; query_alignment_end \"{}\"; cigar \"{}\"\n", seq_name, "SAM2GTF", "transcript", exons.first().unwrap().0, exons.last().unwrap().1, ".", strand, ".", read_count, qname, query_alignment_start, query_alignment_end, cigar.to_string());
+        let tx_line = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\ttranscript_id \"{}\"; read_name \"{}\"; query_alignment_start \"{}\"; query_alignment_end \"{}\"; cigar \"{}\"\n", seq_name, "SAM2GTF", "transcript", exons.first().unwrap().0, exons.last().unwrap().1, ".", strand, ".", read_count, qname, query_alignment_start, query_alignment_end, cigar_string);
         gtf_writer.write_all(tx_line.as_bytes()).expect("Could not write to output file");
 
         // write exon lines. qname as transcript_id
@@ -157,6 +168,14 @@ fn main() {
             .value_parser(clap::value_parser!(u8).range(0..100))
             .action(ArgAction::Set)
         )
+        .arg(
+            Arg::new("simplify_cigar")
+            .short('m')
+            .long("simplify_cigar")
+            .required(false)
+            .action(ArgAction::SetTrue)
+            .help("If enabled, will replace cigar with operations as used in the GTF conversion. This will simplify the cigar string to only contain M, N, and S operations.")
+        )
         .after_help("--help or -h")
         .get_matches();
 
@@ -165,6 +184,7 @@ fn main() {
     let output_fname: &String = matches.get_one("output").unwrap();
     let keep_multi: bool = matches.get_flag("keep_multi");
     let percent_alignment: u8 = *matches.get_one("percent_alignment").expect("required");
+    let simplify_cigar: bool = matches.get_flag("simplify_cigar");
 
-    convert(input_fname.to_string(), output_fname.to_string(), keep_multi, percent_alignment);
+    convert(input_fname.to_string(), output_fname.to_string(), keep_multi, percent_alignment, simplify_cigar);
 }
